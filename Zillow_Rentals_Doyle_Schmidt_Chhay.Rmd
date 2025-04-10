@@ -1,0 +1,883 @@
+---
+title: "Zillow_Rentals_Doyle_Schmidt_Chhay"
+author: "Madison Schmidt, Billy Doyle, Chammroeun Chhay"
+date: "2025-02-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=4)
+options(scipen = 0, digits = 3)  # controls base R output
+if(!require('pacman')) {
+  install.packages('pacman')
+}
+pacman::p_load(ggplot2, dplyr, tidyverse, data.table, lubridate, ggpubr, skimr, scales, plotly, sf, ggmap, mapview, leaflet, leafsync, tigris)
+# install a package if it does not exist already and put the package in the path (library)
+# dplyr, ggplot2, tidyr
+# install.packages('ggplot2')
+# library(ggplot2)
+```
+
+## Data Aquisition, Loading, and Composition
+
+Load in the data that was cleaned and combined from different data sets. This work can be seen in the Appendix.
+
+```{r}
+data <- read.csv("data/combined_zillow_project_data.csv")
+```
+
+## EDA
+
+```{r}
+library(tigris)
+library(sf)
+library(dplyr)
+library(ggplot2)
+```
+
+Base map construction for contiguous US
+```{r}
+# Load counties but exclude Alaska, Hawaii, and U.S. territories
+us_counties_sf <- counties(cb = TRUE, class = "sf") %>%
+  filter(!substr(GEOID, 1, 2) %in% c("02", "15", "60", "66", "69", "72", "78"))
+
+# Plot only the mainland U.S.
+ggplot(us_counties_sf) +
+  geom_sf(fill = "lightgray", color = "black") +
+  coord_sf(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +  # Crop to mainland
+  ggtitle("Mainland U.S. Counties (Excluding AK, HI, & Territories)") +
+  theme_minimal()
+```
+
+### Aggregate by county
+
+```{r}
+
+# Aggregate by county and calculate the average of several columns together
+county_aggregated_df <- data %>%
+  group_by(CountyName, GEOID, StateName, lat, lng) %>%
+  summarise(
+    avg_historical_range_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31, X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31, X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31, X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31, X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31, X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31, X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31, X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31, X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31, X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31, X2025.01.31), na.rm = TRUE),
+    avg_2024_rent = mean(c(X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31), na.rm = TRUE),
+    avg_2023_rent = mean(c(X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31), na.rm = TRUE),
+    avg_2022_rent = mean(c(X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31), na.rm = TRUE),
+    avg_2021_rent = mean(c(X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31), na.rm = TRUE),
+    avg_2020_rent = mean(c(X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31), na.rm = TRUE),
+    avg_2019_rent = mean(c(X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31), na.rm = TRUE),
+    avg_2018_rent = mean(c(X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31), na.rm = TRUE),
+    avg_2017_rent = mean(c(X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31), na.rm = TRUE),
+    avg_2016_rent = mean(c(X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31), na.rm = TRUE),
+    avg_2015_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31), na.rm = TRUE),
+    
+    avg_population = mean(population, na.rm = TRUE),
+    
+    avg_historical_range_median_income = mean(c(median_income_2015, median_income_2016, median_income_2017, median_income_2018, median_income_2019, median_income_2020, median_income_2021, median_income_2022), na.rm = TRUE),
+    avg_2015_median_income = mean(median_income_2015, na.rm = TRUE),
+    avg_2016_median_income = mean(median_income_2016, na.rm = TRUE),
+    avg_2017_median_income = mean(median_income_2017, na.rm = TRUE),
+    avg_2018_median_income = mean(median_income_2018, na.rm = TRUE),
+    avg_2019_median_income = mean(median_income_2019, na.rm = TRUE),
+    avg_2020_median_income = mean(median_income_2020, na.rm = TRUE),
+    avg_2021_median_income = mean(median_income_2021, na.rm = TRUE),
+    avg_2022_median_income = mean(median_income_2022, na.rm = TRUE),
+    
+    avg_historical_range_median_age = mean(c(median_age_2015, median_age_2016, median_age_2017, median_age_2018, median_age_2019, median_age_2020, median_age_2021, median_age_2022), na.rm = TRUE),
+    avg_2015_median_age = mean(median_age_2015, na.rm = TRUE),
+    avg_2016_median_age = mean(median_age_2016, na.rm = TRUE),
+    avg_2017_median_age = mean(median_age_2017, na.rm = TRUE),
+    avg_2018_median_age = mean(median_age_2018, na.rm = TRUE),
+    avg_2019_median_age = mean(median_age_2019, na.rm = TRUE),
+    avg_2020_median_age = mean(median_age_2020, na.rm = TRUE),
+    avg_2021_median_age = mean(median_age_2021, na.rm = TRUE),
+    avg_2022_median_age = mean(median_age_2022, na.rm = TRUE),
+    
+    avg_historical_range_property_taxes = mean(c(property_taxes.x_2015, property_taxes.x_2016, property_taxes.x_2017, property_taxes.x_2018, property_taxes.x_2019, property_taxes.x_2020, property_taxes.x_2021, property_taxes.x_2022), na.rm = TRUE),
+    avg_2015_property_taxes = mean(property_taxes.x_2015, na.rm = TRUE),
+    avg_2016_property_taxes = mean(property_taxes.x_2016, na.rm = TRUE),
+    avg_2017_property_taxes = mean(property_taxes.x_2017, na.rm = TRUE),
+    avg_2018_property_taxes = mean(property_taxes.x_2018, na.rm = TRUE),
+    avg_2019_property_taxes = mean(property_taxes.x_2019, na.rm = TRUE),
+    avg_2020_property_taxes = mean(property_taxes.x_2020, na.rm = TRUE),
+    avg_2021_property_taxes = mean(property_taxes.x_2021, na.rm = TRUE),
+    avg_2022_property_taxes = mean(property_taxes.x_2022, na.rm = TRUE),
+  )
+
+
+```
+
+```{r}
+county_aggregated_df$GEOID <- as.character(county_aggregated_df$GEOID)
+# List of potential values
+valid_categories <- c("AL", "AK", "AZ", "AR", "CA", "CO", "CT")
+county_aggregated_df <- county_aggregated_df %>%
+  mutate(
+    GEOID = case_when(
+      StateName %in% valid_categories ~ str_pad(GEOID, width = max(nchar(GEOID)) + 1, side = "left", pad = "0"),
+      TRUE ~ GEOID  # Default case (for rows not matching the condition)
+    )
+  )
+
+map_data <- us_counties_sf %>%
+  left_join(county_aggregated_df, by = "GEOID")
+
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  coord_sf(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +
+  ggtitle("Average Historical Rent Price (2015-2024) by County (Mainland U.S.)") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_median_income), color = "black") +
+  scale_fill_viridis_c(name = "Average Median Income ($)") +
+  coord_sf(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +
+  ggtitle("Average Historical Median Income (2015-2022) by County (Mainland U.S.)") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_property_taxes), color = "black") +
+  scale_fill_viridis_c(name = "Average Property Taxes ($)") +
+  coord_sf(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +
+  ggtitle("Average Historical Property Taxes (2015-2022) by County (Mainland U.S.)") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_median_age), color = "black") +
+  scale_fill_viridis_c(name = "Average Median Age (years)") +
+  coord_sf(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +
+  ggtitle("Average Historical Median Age (2015-2022) by County (Mainland U.S.)") +
+  theme_minimal()
+```
+
+### Correlation on a Historic Basis for the United States as a Whole
+
+Examine correlations between historical rent prices and population sizes, median income, median age, and property taxes:
+
+```{r, results='hide'}
+cor(county_aggregated_df$avg_historical_range_rent, county_aggregated_df$avg_population)
+cor(county_aggregated_df$avg_historical_range_rent, county_aggregated_df$avg_historical_range_median_income)
+cor(county_aggregated_df$avg_historical_range_rent, county_aggregated_df$avg_historical_range_median_age)
+cor(county_aggregated_df$avg_historical_range_rent, county_aggregated_df$avg_historical_range_property_taxes)
+```
+
+The strongest correlations are between rent prices and the median income (0.43) and the property taxes (0.409)
+
+
+
+## State Level Analysis
+
+Pick States to Zoom in On
+
+```{r}
+table(data$StateName)
+```
+States with the most data points to zoom in on: California, Florida, and Texas
+
+```{r}
+CA_data <- data %>%
+  filter(StateName == 'CA')
+
+FL_data <- data %>%
+  filter(StateName == 'FL')
+
+TX_data <- data %>%
+  filter(StateName == 'TX')
+
+```
+
+### California
+
+```{r}
+CA_county_aggregated_df <- CA_data %>%
+  group_by(CountyName, GEOID, lat, lng) %>%
+  summarise(
+    avg_historical_range_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31, X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31, X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31, X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31, X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31, X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31, X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31, X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31, X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31, X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31, X2025.01.31), na.rm = TRUE),
+    avg_2024_rent = mean(c(X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31), na.rm = TRUE),
+    avg_2023_rent = mean(c(X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31), na.rm = TRUE),
+    avg_2022_rent = mean(c(X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31), na.rm = TRUE),
+    avg_2021_rent = mean(c(X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31), na.rm = TRUE),
+    avg_2020_rent = mean(c(X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31), na.rm = TRUE),
+    avg_2019_rent = mean(c(X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31), na.rm = TRUE),
+    avg_2018_rent = mean(c(X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31), na.rm = TRUE),
+    avg_2017_rent = mean(c(X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31), na.rm = TRUE),
+    avg_2016_rent = mean(c(X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31), na.rm = TRUE),
+    avg_2015_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31), na.rm = TRUE),
+    
+    avg_population = mean(population, na.rm = TRUE),
+    
+    avg_historical_range_median_income = mean(c(median_income_2015, median_income_2016, median_income_2017, median_income_2018, median_income_2019, median_income_2020, median_income_2021, median_income_2022), na.rm = TRUE),
+    avg_2015_median_income = mean(median_income_2015, na.rm = TRUE),
+    avg_2016_median_income = mean(median_income_2016, na.rm = TRUE),
+    avg_2017_median_income = mean(median_income_2017, na.rm = TRUE),
+    avg_2018_median_income = mean(median_income_2018, na.rm = TRUE),
+    avg_2019_median_income = mean(median_income_2019, na.rm = TRUE),
+    avg_2020_median_income = mean(median_income_2020, na.rm = TRUE),
+    avg_2021_median_income = mean(median_income_2021, na.rm = TRUE),
+    avg_2022_median_income = mean(median_income_2022, na.rm = TRUE),
+    
+    avg_historical_range_median_age = mean(c(median_age_2015, median_age_2016, median_age_2017, median_age_2018, median_age_2019, median_age_2020, median_age_2021, median_age_2022), na.rm = TRUE),
+    avg_2015_median_age = mean(median_age_2015, na.rm = TRUE),
+    avg_2016_median_age = mean(median_age_2016, na.rm = TRUE),
+    avg_2017_median_age = mean(median_age_2017, na.rm = TRUE),
+    avg_2018_median_age = mean(median_age_2018, na.rm = TRUE),
+    avg_2019_median_age = mean(median_age_2019, na.rm = TRUE),
+    avg_2020_median_age = mean(median_age_2020, na.rm = TRUE),
+    avg_2021_median_age = mean(median_age_2021, na.rm = TRUE),
+    avg_2022_median_age = mean(median_age_2022, na.rm = TRUE),
+    
+    avg_historical_range_property_taxes = mean(c(property_taxes.x_2015, property_taxes.x_2016, property_taxes.x_2017, property_taxes.x_2018, property_taxes.x_2019, property_taxes.x_2020, property_taxes.x_2021, property_taxes.x_2022), na.rm = TRUE),
+    avg_2015_property_taxes = mean(property_taxes.x_2015, na.rm = TRUE),
+    avg_2016_property_taxes = mean(property_taxes.x_2016, na.rm = TRUE),
+    avg_2017_property_taxes = mean(property_taxes.x_2017, na.rm = TRUE),
+    avg_2018_property_taxes = mean(property_taxes.x_2018, na.rm = TRUE),
+    avg_2019_property_taxes = mean(property_taxes.x_2019, na.rm = TRUE),
+    avg_2020_property_taxes = mean(property_taxes.x_2020, na.rm = TRUE),
+    avg_2021_property_taxes = mean(property_taxes.x_2021, na.rm = TRUE),
+    avg_2022_property_taxes = mean(property_taxes.x_2022, na.rm = TRUE)
+  )
+```
+
+
+```{r}
+state_fips <- "06"
+
+counties_sf <- counties(state = state_fips, cb = TRUE, class = "sf") 
+
+CA_county_aggregated_df$GEOID <- as.character(CA_county_aggregated_df$GEOID)
+CA_county_aggregated_df <- CA_county_aggregated_df %>%
+  mutate(GEOID = str_pad(GEOID, width = max(nchar(GEOID)) + 1, side = "left", pad = "0"))
+
+map_data <- counties_sf %>%
+  left_join(CA_county_aggregated_df, by = "GEOID")
+
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Historical Rent Price (2015-2025) by County (Mainland U.S.)") +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_2024_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Rent Price in 2024 by County (California)") +
+  theme_minimal()
+```
+
+
+
+### Florida
+
+```{r}
+FL_county_aggregated_df <- FL_data %>%
+  group_by(CountyName, GEOID, lat, lng) %>%
+  summarise(
+    
+    avg_historical_range_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31, X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31, X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31, X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31, X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31, X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31, X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31, X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31, X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31, X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31, X2025.01.31), na.rm = TRUE),
+    avg_2024_rent = mean(c(X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31), na.rm = TRUE),
+    avg_2023_rent = mean(c(X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31), na.rm = TRUE),
+    avg_2022_rent = mean(c(X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31), na.rm = TRUE),
+    avg_2021_rent = mean(c(X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31), na.rm = TRUE),
+    avg_2020_rent = mean(c(X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31), na.rm = TRUE),
+    avg_2019_rent = mean(c(X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31), na.rm = TRUE),
+    avg_2018_rent = mean(c(X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31), na.rm = TRUE),
+    avg_2017_rent = mean(c(X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31), na.rm = TRUE),
+    avg_2016_rent = mean(c(X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31), na.rm = TRUE),
+    avg_2015_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31), na.rm = TRUE),
+    
+    avg_population = mean(population, na.rm = TRUE),
+    
+    avg_historical_range_median_income = mean(c(median_income_2015, median_income_2016, median_income_2017, median_income_2018, median_income_2019, median_income_2020, median_income_2021, median_income_2022), na.rm = TRUE),
+    avg_2015_median_income = mean(median_income_2015, na.rm = TRUE),
+    avg_2016_median_income = mean(median_income_2016, na.rm = TRUE),
+    avg_2017_median_income = mean(median_income_2017, na.rm = TRUE),
+    avg_2018_median_income = mean(median_income_2018, na.rm = TRUE),
+    avg_2019_median_income = mean(median_income_2019, na.rm = TRUE),
+    avg_2020_median_income = mean(median_income_2020, na.rm = TRUE),
+    avg_2021_median_income = mean(median_income_2021, na.rm = TRUE),
+    avg_2022_median_income = mean(median_income_2022, na.rm = TRUE),
+    
+    avg_historical_range_median_age = mean(c(median_age_2015, median_age_2016, median_age_2017, median_age_2018, median_age_2019, median_age_2020, median_age_2021, median_age_2022), na.rm = TRUE),
+    avg_2015_median_age = mean(median_age_2015, na.rm = TRUE),
+    avg_2016_median_age = mean(median_age_2016, na.rm = TRUE),
+    avg_2017_median_age = mean(median_age_2017, na.rm = TRUE),
+    avg_2018_median_age = mean(median_age_2018, na.rm = TRUE),
+    avg_2019_median_age = mean(median_age_2019, na.rm = TRUE),
+    avg_2020_median_age = mean(median_age_2020, na.rm = TRUE),
+    avg_2021_median_age = mean(median_age_2021, na.rm = TRUE),
+    avg_2022_median_age = mean(median_age_2022, na.rm = TRUE),
+    
+    avg_historical_range_property_taxes = mean(c(property_taxes.x_2015, property_taxes.x_2016, property_taxes.x_2017, property_taxes.x_2018, property_taxes.x_2019, property_taxes.x_2020, property_taxes.x_2021, property_taxes.x_2022), na.rm = TRUE),
+    avg_2015_property_taxes = mean(property_taxes.x_2015, na.rm = TRUE),
+    avg_2016_property_taxes = mean(property_taxes.x_2016, na.rm = TRUE),
+    avg_2017_property_taxes = mean(property_taxes.x_2017, na.rm = TRUE),
+    avg_2018_property_taxes = mean(property_taxes.x_2018, na.rm = TRUE),
+    avg_2019_property_taxes = mean(property_taxes.x_2019, na.rm = TRUE),
+    avg_2020_property_taxes = mean(property_taxes.x_2020, na.rm = TRUE),
+    avg_2021_property_taxes = mean(property_taxes.x_2021, na.rm = TRUE),
+    avg_2022_property_taxes = mean(property_taxes.x_2022, na.rm = TRUE)
+  )
+```
+
+```{r}
+state_fips <- "12"
+
+counties_sf <- counties(state = state_fips, cb = TRUE, class = "sf") 
+
+FL_county_aggregated_df$GEOID <- as.character(FL_county_aggregated_df$GEOID)
+
+map_data <- counties_sf %>%
+  left_join(FL_county_aggregated_df, by = "GEOID")
+
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Historical Rent Price (2015-2024) by County (Florida)") +
+  theme_minimal()
+
+```
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_2024_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Rent Price in 2024 by County (Florida)") +
+  theme_minimal()
+```
+
+
+### Texas
+
+```{r}
+TX_county_aggregated_df <- TX_data %>%
+  group_by(CountyName, GEOID, lat, lng) %>%
+  summarise(
+    
+    avg_historical_range_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31, X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31, X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31, X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31, X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31, X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31, X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31, X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31, X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31, X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31, X2025.01.31), na.rm = TRUE),
+    avg_2024_rent = mean(c(X2024.01.31, X2024.02.29, X2024.03.31, X2024.04.30, X2024.05.31, X2024.06.30, X2024.07.31, X2024.08.31, X2024.09.30, X2024.10.31, X2024.11.30, X2024.12.31), na.rm = TRUE),
+    avg_2023_rent = mean(c(X2023.01.31, X2023.02.28, X2023.03.31, X2023.04.30, X2023.05.31, X2023.06.30, X2023.07.31, X2023.08.31, X2023.09.30, X2023.10.31, X2023.11.30, X2023.12.31), na.rm = TRUE),
+    avg_2022_rent = mean(c(X2022.01.31, X2022.02.28, X2022.03.31, X2022.04.30, X2022.05.31, X2022.06.30, X2022.07.31, X2022.08.31, X2022.09.30, X2022.10.31, X2022.11.30, X2022.12.31), na.rm = TRUE),
+    avg_2021_rent = mean(c(X2021.01.31, X2021.02.28, X2021.03.31, X2021.04.30, X2021.05.31, X2021.06.30, X2021.07.31, X2021.08.31, X2021.09.30, X2021.10.31, X2021.11.30, X2021.12.31), na.rm = TRUE),
+    avg_2020_rent = mean(c(X2020.01.31, X2020.02.29, X2020.03.31, X2020.04.30, X2020.05.31, X2020.06.30, X2020.07.31, X2020.08.31, X2020.09.30, X2020.10.31, X2020.11.30, X2020.12.31), na.rm = TRUE),
+    avg_2019_rent = mean(c(X2019.01.31, X2019.02.28, X2019.03.31, X2019.04.30, X2019.05.31, X2019.06.30, X2019.07.31, X2019.08.31, X2019.09.30, X2019.10.31, X2019.11.30, X2019.12.31), na.rm = TRUE),
+    avg_2018_rent = mean(c(X2018.01.31, X2018.02.28, X2018.03.31, X2018.04.30, X2018.05.31, X2018.06.30, X2018.07.31, X2018.08.31, X2018.09.30, X2018.10.31, X2018.11.30, X2018.12.31), na.rm = TRUE),
+    avg_2017_rent = mean(c(X2017.01.31, X2017.02.28, X2017.03.31, X2017.04.30, X2017.05.31, X2017.06.30, X2017.07.31, X2017.08.31, X2017.09.30, X2017.10.31, X2017.11.30, X2017.12.31), na.rm = TRUE),
+    avg_2016_rent = mean(c(X2016.01.31, X2016.02.29, X2016.03.31, X2016.04.30, X2016.05.31, X2016.06.30, X2016.07.31, X2016.08.31, X2016.09.30, X2016.10.31, X2016.11.30, X2016.12.31), na.rm = TRUE),
+    avg_2015_rent = mean(c(X2015.01.31, X2015.02.28, X2015.03.31, X2015.04.30, X2015.05.31, X2015.06.30, X2015.07.31, X2015.08.31, X2015.09.30, X2015.10.31, X2015.11.30, X2015.12.31), na.rm = TRUE),
+    
+    avg_population = mean(population, na.rm = TRUE),
+    
+    avg_historical_range_median_income = mean(c(median_income_2015, median_income_2016, median_income_2017, median_income_2018, median_income_2019, median_income_2020, median_income_2021, median_income_2022), na.rm = TRUE),
+    avg_2015_median_income = mean(median_income_2015, na.rm = TRUE),
+    avg_2016_median_income = mean(median_income_2016, na.rm = TRUE),
+    avg_2017_median_income = mean(median_income_2017, na.rm = TRUE),
+    avg_2018_median_income = mean(median_income_2018, na.rm = TRUE),
+    avg_2019_median_income = mean(median_income_2019, na.rm = TRUE),
+    avg_2020_median_income = mean(median_income_2020, na.rm = TRUE),
+    avg_2021_median_income = mean(median_income_2021, na.rm = TRUE),
+    avg_2022_median_income = mean(median_income_2022, na.rm = TRUE),
+    
+    avg_historical_range_median_age = mean(c(median_age_2015, median_age_2016, median_age_2017, median_age_2018, median_age_2019, median_age_2020, median_age_2021, median_age_2022), na.rm = TRUE),
+    avg_2015_median_age = mean(median_age_2015, na.rm = TRUE),
+    avg_2016_median_age = mean(median_age_2016, na.rm = TRUE),
+    avg_2017_median_age = mean(median_age_2017, na.rm = TRUE),
+    avg_2018_median_age = mean(median_age_2018, na.rm = TRUE),
+    avg_2019_median_age = mean(median_age_2019, na.rm = TRUE),
+    avg_2020_median_age = mean(median_age_2020, na.rm = TRUE),
+    avg_2021_median_age = mean(median_age_2021, na.rm = TRUE),
+    avg_2022_median_age = mean(median_age_2022, na.rm = TRUE),
+    
+    avg_historical_range_property_taxes = mean(c(property_taxes.x_2015, property_taxes.x_2016, property_taxes.x_2017, property_taxes.x_2018, property_taxes.x_2019, property_taxes.x_2020, property_taxes.x_2021, property_taxes.x_2022), na.rm = TRUE),
+    avg_2015_property_taxes = mean(property_taxes.x_2015, na.rm = TRUE),
+    avg_2016_property_taxes = mean(property_taxes.x_2016, na.rm = TRUE),
+    avg_2017_property_taxes = mean(property_taxes.x_2017, na.rm = TRUE),
+    avg_2018_property_taxes = mean(property_taxes.x_2018, na.rm = TRUE),
+    avg_2019_property_taxes = mean(property_taxes.x_2019, na.rm = TRUE),
+    avg_2020_property_taxes = mean(property_taxes.x_2020, na.rm = TRUE),
+    avg_2021_property_taxes = mean(property_taxes.x_2021, na.rm = TRUE),
+    avg_2022_property_taxes = mean(property_taxes.x_2022, na.rm = TRUE)
+  )
+```
+
+```{r}
+state_fips <- "48"
+
+counties_sf <- counties(state = state_fips, cb = TRUE, class = "sf") 
+
+TX_county_aggregated_df$GEOID <- as.character(TX_county_aggregated_df$GEOID)
+
+map_data <- counties_sf %>%
+  left_join(TX_county_aggregated_df, by = "GEOID")
+
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_historical_range_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Historical Rent Price (2015-2024) by County (Texas)") +
+  theme_minimal()
+
+```
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = avg_2024_rent), color = "black") +
+  scale_fill_viridis_c(name = "Average Rent ($)") +
+  ggtitle("Average Rent Price in 2024 by County (Texas)") +
+  theme_minimal()
+```
+
+
+## Modeling for Rent in 2024
+
+### Let's zoom back out the the country as a whole.
+
+First, make a linear regression model just using the past years rent to see how the model performs in predicting the 2024 rent price for each county.
+
+```{r}
+data$avg_rent_2024 <- rowMeans(data[, c('X2024.01.31', 'X2024.02.29', 'X2024.03.31', 'X2024.04.30', 'X2024.05.31', 'X2024.06.30', 'X2024.07.31', 'X2024.08.31', 'X2024.09.30', 'X2024.10.31', 'X2024.11.30', 'X2024.12.31')], na.rm = TRUE)
+data$avg_rent_2023 <- rowMeans(data[, c('X2023.01.31', 'X2023.02.28', 'X2023.03.31', 'X2023.04.30', 'X2023.05.31', 'X2023.06.30', 'X2023.07.31', 'X2023.08.31', 'X2023.09.30', 'X2023.10.31', 'X2023.11.30', 'X2023.12.31')], na.rm = TRUE)
+data$avg_rent_2022 <- rowMeans(data[, c('X2022.01.31', 'X2022.02.28', 'X2022.03.31', 'X2022.04.30', 'X2022.05.31', 'X2022.06.30', 'X2022.07.31', 'X2022.08.31', 'X2022.09.30', 'X2022.10.31', 'X2022.11.30', 'X2022.12.31')], na.rm = TRUE)
+data$avg_rent_2021 <- rowMeans(data[, c('X2021.01.31', 'X2021.02.28', 'X2021.03.31', 'X2021.04.30', 'X2021.05.31', 'X2021.06.30', 'X2021.07.31', 'X2021.08.31', 'X2021.09.30', 'X2021.10.31', 'X2021.11.30', 'X2021.12.31')], na.rm = TRUE)
+data$avg_rent_2020 <- rowMeans(data[, c('X2020.01.31', 'X2020.02.29', 'X2020.03.31', 'X2020.04.30', 'X2020.05.31', 'X2020.06.30', 'X2020.07.31', 'X2020.08.31', 'X2020.09.30', 'X2020.10.31', 'X2020.11.30', 'X2020.12.31')], na.rm = TRUE)
+data$avg_rent_2019 <- rowMeans(data[, c('X2019.01.31', 'X2019.02.28', 'X2019.03.31', 'X2019.04.30', 'X2019.05.31', 'X2019.06.30', 'X2019.07.31', 'X2019.08.31', 'X2019.09.30', 'X2019.10.31', 'X2019.11.30', 'X2019.12.31')], na.rm = TRUE)
+data$avg_rent_2018 <- rowMeans(data[, c('X2018.01.31', 'X2018.02.28', 'X2018.03.31', 'X2018.04.30', 'X2018.05.31', 'X2018.06.30', 'X2018.07.31', 'X2018.08.31', 'X2018.09.30', 'X2018.10.31', 'X2018.11.30', 'X2018.12.31')], na.rm = TRUE)
+data$avg_rent_2017 <- rowMeans(data[, c('X2017.01.31', 'X2017.02.28', 'X2017.03.31', 'X2017.04.30', 'X2017.05.31', 'X2017.06.30', 'X2017.07.31', 'X2017.08.31', 'X2017.09.30', 'X2017.10.31', 'X2017.11.30', 'X2017.12.31')], na.rm = TRUE)
+data$avg_rent_2016 <- rowMeans(data[, c('X2016.01.31', 'X2016.02.29', 'X2016.03.31', 'X2016.04.30', 'X2016.05.31', 'X2016.06.30', 'X2016.07.31', 'X2016.08.31', 'X2016.09.30', 'X2016.10.31', 'X2016.11.30', 'X2016.12.31')], na.rm = TRUE)
+data$avg_rent_2015 <- rowMeans(data[, c('X2015.01.31', 'X2015.02.28', 'X2015.03.31', 'X2015.04.30', 'X2015.05.31', 'X2015.06.30', 'X2015.07.31', 'X2015.08.31', 'X2015.09.30', 'X2015.10.31', 'X2015.11.30', 'X2015.12.31')], na.rm = TRUE)
+```
+
+Make a new data frame selecting only the columns we want for modeling
+
+```{r}
+data_modeling <- data[, c('avg_rent_2024', 'avg_rent_2023', 'avg_rent_2022', 'avg_rent_2021', 'avg_rent_2020', 'avg_rent_2019', 'avg_rent_2018', 'avg_rent_2017', 'avg_rent_2016', 'avg_rent_2015', 'population', 'property_taxes.x_2022', 'property_taxes.x_2021', 'property_taxes.x_2020', 'property_taxes.x_2019', 'property_taxes.x_2018', 'property_taxes.x_2017', 'property_taxes.x_2016', 'property_taxes.x_2015', 'median_income_2022', 'median_income_2021', 'median_income_2020', 'median_income_2019', 'median_income_2018', 'median_income_2017', 'median_income_2016', 'median_income_2015', 'county_state', 'StateName')]
+```
+
+Save the factors as needed.
+
+```{r}
+data_modeling$county_state <- as.factor(data_modeling$county_state)
+data_modeling$StateName <- as.factor(data_modeling$StateName)
+```
+
+Now we model! (Start with a linear model with all factors included)
+
+```{r}
+lm_model_full <- lm(avg_rent_2024 ~ . -(county_state), data = data_modeling)
+summary(lm_model_full)
+```
+
+Now use backwards selection.
+
+```{r}
+# Use backwards selection
+bwd_model <- step(lm_model_full, direction = "backward", trace = 0)
+anova(bwd_model)
+```
+
+Now try removing factors one by one starting with the largest p-value each time.
+
+```{r}
+new_model <- update(bwd_model, .~. -property_taxes.x_2022)
+anova(new_model)
+```
+```{r}
+new_model <- update(bwd_model, .~. -avg_rent_2016)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -property_taxes.x_2022)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -property_taxes.x_2020)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -property_taxes.x_2019)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -median_income_2022)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -median_income_2019)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -median_income_2021)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -avg_rent_2018)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -avg_rent_2017)
+anova(new_model)
+```
+```{r}
+new_model <- update(new_model, .~. -property_taxes.x_2018)
+anova(new_model)
+```
+Here, we decide to take median_income_2015 out becaue even though it has significance at the 0.05 level it does not make logical sense for this to contribute meaningfully when median incomes from other more recent years did not.
+
+```{r}
+new_model <- update(new_model, .~. -median_income_2015)
+anova(new_model)
+```
+Here, again even though avg_rent_2015 is significant it does not make the most sense given more recent years were taken out so we will remove it.
+
+```{r}
+new_model <- update(new_model, .~. -avg_rent_2015)
+anova(new_model)
+```
+
+Here all factors are significant at the 0.05 level and make sense to be contributors. The fact that the avg_rent_2021 was taken out of the model could make sense due to COVID having an impact on what renters were leasing at the following year once rent freezes were no longer in effect in the wake of the immediate COVID crisis.
+
+```{r}
+final_US_model <- new_model
+anova(final_US_model)
+```
+Intepretation:
+
+
+
+
+
+#### Modeling the county-aggregated data
+
+```{r}
+# First, drop NA's
+county_aggregated_df_clean <- drop_na(county_aggregated_df)
+
+fit_rent_only <- lm(avg_2024_rent ~ avg_2023_rent + avg_2022_rent + avg_2021_rent + avg_2020_rent + avg_2019_rent + avg_2018_rent + avg_2017_rent + avg_2016_rent + avg_2015_rent, data = county_aggregated_df_clean) 
+summary(fit_rent_only)
+```
+Now use backwards selection to choose variables
+
+```{r}
+# Use backwards selection
+bwd_rent_only_model <- step(fit_rent_only, direction = "backward", trace = 0)
+summary(bwd_rent_only_model)
+```
+
+Let's do the same thing using Lasso.
+
+```{r}
+library(glmnet)
+library(coefplot)
+
+## get X matrix and y
+X <- as.matrix(county_aggregated_df_clean[, c('avg_2023_rent', 'avg_2022_rent', 'avg_2021_rent', 'avg_2020_rent', 'avg_2019_rent', 'avg_2018_rent', 'avg_2017_rent', 'avg_2016_rent', 'avg_2015_rent')]) # Exclude target, FIPS, and County columns
+y <- county_aggregated_df_clean$avg_2024_rent  # Assuming target is stored in `target_variable`
+
+cv_fit <- cv.glmnet(X, y, alpha = 1)
+
+plot(cv_fit)
+```
+
+Now we will add other variables to the mix.
+
+```{r}
+fit_all_info <- lm(avg_2024_rent ~ avg_2023_rent + avg_2022_rent + avg_2021_rent + avg_2020_rent + avg_2019_rent + avg_2018_rent + avg_2017_rent + avg_2016_rent + avg_2015_rent + avg_2015_median_income + avg_2016_median_income + avg_2016_median_income + avg_2017_median_income + avg_2018_median_income + avg_2019_median_income + avg_2020_median_income + avg_2021_median_income + avg_2022_median_income + avg_2015_property_taxes + avg_2016_property_taxes + avg_2017_property_taxes + avg_2018_property_taxes + avg_2019_property_taxes + avg_2020_property_taxes + avg_2021_property_taxes + avg_2022_property_taxes, data = county_aggregated_df_clean) 
+summary(fit_all_info)
+```
+
+Now run backwards selection again
+
+```{r}
+# Use backwards selection
+bwd_all_info_model <- step(fit_all_info, direction = "backward", trace = 0)
+summary(bwd_all_info_model)
+```
+
+Now check this output using Anova
+
+Take out the avg_2020_median_income
+
+```{r}
+new_model <- update(bwd_all_info_model, .~. -avg_2020_median_income)
+anova(new_model)
+```
+
+Now take out avg_2021_median_income
+
+```{r}
+new_model <- update(new_model, .~. -avg_2021_median_income)
+anova(new_model)
+```
+
+Now take out avg_2022_median_income
+
+```{r}
+new_model <- update(new_model, .~. -avg_2022_median_income)
+anova(new_model)
+```
+Let's call and save the final model we have come to.
+
+```{r}
+final_US_fuller_model <- new_model
+summary(final_US_fuller_model)
+```
+Interpretation:
+
+
+
+
+
+### Let's Look on a State-by-State Basis Again
+
+### California!
+
+Subset the data so that it is only showing renting house in California 
+```{r}
+CA <- data_modeling[data_modeling$StateName == "CA", ]
+CA <- subset(CA, select = -StateName)
+CA <- na.omit(CA)
+```
+
+Start with a linear regression model 
+```{r}
+CA_reg <- lm(avg_rent_2024 ~., data = CA)
+summary(CA_reg)
+```
+
+```{r}
+# Use backwards selection
+CA_bwd_model <- step(CA_reg, direction = "backward", trace = 0)
+anova(CA_bwd_model)
+```
+```{r}
+CA_new_model <- update(CA_bwd_model, .~. -avg_rent_2016)
+anova(CA_new_model)
+```
+
+```{r}
+CA_new_model <- update(CA_new_model, .~. -avg_rent_2015)
+anova(CA_new_model)
+```
+
+### Texas 
+
+Subset the data so that it is only showing renting house in California 
+```{r}
+TX <- data_modeling[data_modeling$StateName == "TX", ]
+TX <- subset(TX, select = -StateName)
+TX <- na.omit(TX)
+```
+
+Start with a linear regression model 
+```{r}
+TX_reg <- lm(avg_rent_2024 ~., data = TX)
+summary(TX_reg)
+```
+
+```{r}
+# Use backwards selection
+TX_bwd_model <- step(TX_reg, direction = "backward", trace = 0)
+anova(TX_bwd_model)
+```
+```{r}
+TX_new_model <- update(TX_bwd_model, .~. -avg_rent_2016)
+anova(TX_new_model)
+```
+
+```{r}
+TX_new_model <- update(TX_new_model, .~. -avg_rent_2015)
+anova(TX_new_model)
+```
+```{r}
+TX_new_model <- update(TX_new_model, .~. -avg_rent_2017)
+anova(TX_new_model)
+```
+```{r}
+TX_new_model <- update(TX_new_model, .~. -avg_rent_2018)
+anova(TX_new_model)
+```
+
+```{r}
+TX_new_model <- update(TX_new_model, .~. -avg_rent_2019)
+anova(TX_new_model)
+```
+
+```{r}
+FL <- data_modeling[data_modeling$StateName == "FL", ]
+FL <- subset(FL, select = -StateName)
+FL <- na.omit(FL)
+```
+
+Start with a linear regression model 
+```{r}
+FL_reg <- lm(avg_rent_2024 ~., data = FL)
+summary(FL_reg)
+```
+
+```{r}
+# Use backwards selection
+FL_bwd_model <- step(FL_reg, direction = "backward", trace = 0)
+anova(FL_bwd_model)
+```
+```{r}
+FL_new_model <- update(FL_bwd_model, .~. -avg_rent_2017)
+anova(FL_new_model)
+```
+
+
+## APPENDIX
+
+Get data from the Census buearu for each county from 2015-2022
+```{r, eval=FALSE, result='hide'}
+library(tidycensus)
+library(tidyverse)
+
+
+#Requesting API key from the Census
+census_api_key("8742799b6616820ce0d0a8dd45acd13c5b47fcc7", install = TRUE)
+
+
+# Set Census API Key
+readRenviron("~/.Renviron")  # Ensure the API key is loaded
+
+
+# Define years from 2015 to the most recent available ACS data
+years <- 2015:2022
+
+
+# Retrieve Median Household Income
+income_data <- purrr::map_dfr(years, function(y) {
+ get_acs(
+   geography = "county",
+   variables = c(median_income = "B19013_001"),
+   year = y,
+   survey = "acs5"
+ ) %>%
+ mutate(year = y)
+})
+
+
+# Retrieve Median Age Data
+age_data <- purrr::map_dfr(years, function(y) {
+ get_acs(
+   geography = "county",
+   variables = c(median_age = "B01002_001"), 
+   year = y,
+   survey = "acs5"
+ ) %>%
+ mutate(year = y)
+})
+
+
+#Inner Joining the Two Sets
+state_summary <- income_data %>%
+ left_join(age_data, by = c("GEOID", "NAME", "year")) %>%
+ group_by(GEOID, NAME, year) %>%
+ summarise(
+   median_income = mean(estimate.x, na.rm = TRUE), 
+   median_age = mean(estimate.y, na.rm = TRUE),    
+   .groups = "drop"
+   )
+
+
+# Retrieve Property Tax Data
+property_tax_data <- purrr::map_dfr(years, function(y) {
+  get_acs(
+    geography = "county",
+    variables = c(
+      property_taxes = "B25103_001"  # Selected Monthly Owner Costs for Housing Units (includes property taxes)
+    ),
+    year = y,
+    survey = "acs5"
+  ) %>%
+  mutate(year = y)
+})
+
+
+state_taxes_summary <- property_tax_data %>%
+  group_by(GEOID, NAME, year) %>%
+  summarise(property_taxes = mean(estimate, na.rm = TRUE), .groups = "drop")
+
+
+
+
+
+
+state_summary <- state_summary %>% 
+  left_join(state_taxes_summary, by = c("GEOID", "NAME", "year"))
+
+# Reshape data to have one row per county, separate columns for each year's median income & age
+state_summary_wide <- state_summary %>%
+  pivot_wider(names_from = year, 
+              values_from = c(median_income, median_age, property_taxes.x), 
+              names_glue = "{.value}_{year}")
+
+```
+
+Fix the formatting of the income data to separate the state and county as well as add the stae abbreviation code.
+
+```{r, eval=FALSE, results='hide'}
+
+county_data <- read.csv("data/state_summary_wide.csv")
+
+library(tidyverse)
+
+county_data <- county_data %>%
+  separate(NAME, into = c("county", "state"), sep = ", ")
+
+
+state_abbreviations <- data.frame(
+  state = c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", 
+            "Delaware","District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", 
+            "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", 
+            "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", 
+            "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", 
+            "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", 
+            "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"),
+  abbreviation = c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE","DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA", 
+                   "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", 
+                   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", 
+                   "VA", "WA", "WV", "WI", "WY")
+)
+
+county_data <- county_data %>%
+  left_join(state_abbreviations, by = "state")
+
+write.csv(county_data, "state_income_summary_updated.csv", row.names = FALSE)
+```
+
+Load in the data 
+
+```{r, eval=FALSE, results='hide'}
+zillow <- read.csv("data/City_zori_uc_sfrcondomfr_sm_month.csv")
+
+county_geo <- read.csv("data/uscounties.csv")
+
+county_data <- read.csv("data/state_income_summary_updated.csv")
+```
+
+Inner join the data frames
+
+```{r, eval=FALSE, results='hide'}
+df <- inner_join(county_data, county_geo, by = c("GEOID" = "county_fips"))
+colnames(df)[colnames(df) == "county.x"] <- "county_fullname"
+
+df <- df %>%
+  mutate(county_state = paste(county_fullname, state_id))
+zillow <- zillow %>%
+  mutate(county_state = paste(CountyName, StateName))
+
+data <- inner_join(zillow, df, by = "county_state")
+data_cleaned <- data %>% distinct(RegionID, RegionName, X2015.01.31, .keep_all = TRUE)
+
+data_cleaned <- data_cleaned %>%
+  select(-c(RegionType, state_name, abbreviation, county.y, county_full, county_fullname, state_id, State))
+
+colnames(data_cleaned)[colnames(data_cleaned) == "county_ascii"] <- "county"
+
+write.csv(data_cleaned, "combined_zillow_project_data.csv", row.names = FALSE)
+```
